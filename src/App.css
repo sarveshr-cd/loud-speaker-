@@ -568,12 +568,23 @@ select option {
   border-radius: 14px;
   display: grid;
   gap: 12px;
-  grid-template-columns: 1.2fr 1fr 1fr auto;
+  grid-template-columns: minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(120px, 0.9fr) auto auto auto;
   padding: 14px 16px;
 }
 
 .speaker-row strong {
   color: var(--white);
+}
+
+.speaker-row.selected-speaker {
+  background: linear-gradient(135deg, rgba(104, 232, 255, 0.14), rgba(217, 255, 115, 0.08));
+  border-color: rgba(104, 232, 255, 0.36);
+  box-shadow: 0 14px 34px rgba(104, 232, 255, 0.08);
+}
+
+.row-action {
+  min-height: 36px;
+  padding: 7px 12px;
 }
 
 .status {

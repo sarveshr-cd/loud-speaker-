@@ -277,9 +277,8 @@ function QuestionsPage({ session, updateSession }: { session: SessionState; upda
       {selectedQuestion && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>QUESTION #{selectedQuestion.id.toString().padStart(2, '0')}</h2>
-            <h3>{selectedQuestion.title}</h3>
-            <p>{selectedQuestion.text}</p>
+            <h2>CARD #{selectedQuestion.id.toString().padStart(2, '0')}</h2>
+            <p className="muted">Enter the participant name to lock this card.</p>
             <label>
               Your Name
               <input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
@@ -299,15 +298,25 @@ function QuestionsPage({ session, updateSession }: { session: SessionState; upda
 function SpeakersPage({ currentSpeaker, now, session, updateSession }: { currentSpeaker?: Selection; now: number; session: SessionState; updateSession: (updater: (current: SessionState) => SessionState) => void }) {
   const [restartOpen, setRestartOpen] = useState(false);
   const [customWord, setCustomWord] = useState('');
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
   const remaining = session.timer.endAt ? Math.max(0, session.timer.endAt - now) : session.timer.remainingMs;
-  const activeQuestion = questions.find((question) => question.id === currentSpeaker?.questionId);
-
+  const selectedSpeaker = session.selections.find((item) => item.id === selectedSpeakerId);
+  const displaySpeaker = selectedSpeaker ?? currentSpeaker;
   const startSpeaker = (speaker?: Selection) => {
     if (!speaker) return;
+    setSelectedSpeakerId(speaker.id);
     updateSession((current) => ({
       ...current,
       selections: current.selections.map((item) => item.id === speaker.id ? { ...item, status: 'speaking' } : item),
       timer: { speakerId: speaker.id, phase: 'speaking', endAt: Date.now() + current.speakingSeconds * 1000, remainingMs: current.speakingSeconds * 1000, previousPhase: null },
+    }));
+  };
+  const endSpeaker = (speaker: Selection) => {
+    updateSession((current) => ({
+      ...current,
+      selections: current.selections.map((item) => item.id === speaker.id ? { ...item, status: 'completed' } : item),
+      timer: { ...defaultSession.timer, phase: 'done', speakerId: speaker.id, remainingMs: 0 },
+      glitch: { active: false, word: '' },
     }));
   };
 
@@ -316,20 +325,18 @@ function SpeakersPage({ currentSpeaker, now, session, updateSession }: { current
       <div className="speaker-layout">
         <article className="glass current-panel">
           <p className="eyebrow">NOW SPEAKING</p>
-          <h1>{currentSpeaker?.participantName ?? 'No speaker yet'}</h1>
-          {currentSpeaker ? (
+          <h1>{displaySpeaker?.participantName ?? 'No speaker yet'}</h1>
+          {displaySpeaker ? (
             <>
-              <h2>Question #{currentSpeaker.questionId.toString().padStart(2, '0')}</h2>
-              <p className="facilitator-question">{activeQuestion?.text}</p>
               <div className={`timer ${session.timer.phase}`}>{formatMs(remaining)}</div>
               {session.timer.phase === 'buffer' && <p className="buffer-label">BUFFER TIME</p>}
               <div className="button-row centered">
-                {session.timer.phase === 'idle' || currentSpeaker.status === 'waiting' ? <button className="primary" type="button" onClick={() => startSpeaker(currentSpeaker)}>Start</button> : null}
+                {session.timer.phase === 'idle' || displaySpeaker.status === 'waiting' ? <button className="primary" type="button" onClick={() => startSpeaker(displaySpeaker)}>Start</button> : null}
                 {session.timer.phase === 'speaking' ? <button className="ghost" type="button" onClick={() => updateSession((c) => ({ ...c, timer: { ...c.timer, phase: 'paused', endAt: null, remainingMs: remaining, previousPhase: 'speaking' } }))}>Pause</button> : null}
                 {session.timer.phase === 'paused' ? <button className="primary" type="button" onClick={() => updateSession((c) => ({ ...c, timer: { ...c.timer, phase: c.timer.previousPhase ?? 'speaking', endAt: Date.now() + c.timer.remainingMs } }))}>Resume</button> : null}
-                {session.timer.phase === 'buffer' ? <button className="primary" type="button" onClick={() => updateSession((c) => ({ ...c, selections: c.selections.map((i) => i.id === currentSpeaker.id ? { ...i, status: 'completed' } : i), timer: { ...defaultSession.timer, phase: 'done', speakerId: currentSpeaker.id, remainingMs: 0 } }))}>End Speaker</button> : null}
+                {session.timer.phase === 'speaking' || session.timer.phase === 'paused' || session.timer.phase === 'buffer' ? <button className="primary" type="button" onClick={() => endSpeaker(displaySpeaker)}>End Speaker</button> : null}
                 <button className="ghost" type="button" onClick={() => setRestartOpen(true)}>Restart</button>
-                {currentSpeaker.status === 'completed' || session.timer.phase === 'done' ? <button className="primary" type="button" onClick={() => startSpeaker(session.selections.find((item) => item.status === 'waiting'))}>Start Next Speaker</button> : null}
+                {displaySpeaker.status === 'completed' || session.timer.phase === 'done' ? <button className="primary" type="button" onClick={() => startSpeaker(session.selections.find((item) => item.status === 'waiting'))}>Start Next Speaker</button> : null}
               </div>
             </>
           ) : <p>No speakers yet. Participants need to select their questions first.</p>}
@@ -348,25 +355,44 @@ function SpeakersPage({ currentSpeaker, now, session, updateSession }: { current
         {session.selections.length === 0 ? <p>No speakers yet. Participants need to select their questions first.</p> : (
           <div className="speaker-list">
             {session.selections.map((speaker) => (
-              <div className="speaker-row" key={speaker.id}>
+              <div className={`speaker-row ${displaySpeaker?.id === speaker.id ? 'selected-speaker' : ''}`} key={speaker.id}>
                 <strong>#{speaker.speakingOrder} {speaker.participantName}</strong>
                 <span>Question #{speaker.questionId.toString().padStart(2, '0')}</span>
                 <span>Selected: {timeOnly(speaker.selectedAt)}</span>
                 <span className={`status ${speaker.status}`}>{speaker.status}</span>
+                <button
+                  className="ghost row-action"
+                  disabled={speaker.status === 'completed' || session.timer.phase === 'speaking' || session.timer.phase === 'buffer' || session.timer.phase === 'paused'}
+                  type="button"
+                  onClick={() => setSelectedSpeakerId(speaker.id)}
+                >
+                  Select
+                </button>
+                <button
+                  className="primary row-action"
+                  disabled={speaker.status === 'completed' || session.timer.phase === 'speaking' || session.timer.phase === 'buffer' || session.timer.phase === 'paused'}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSpeakerId(speaker.id);
+                    startSpeaker(speaker);
+                  }}
+                >
+                  Start
+                </button>
               </div>
             ))}
           </div>
         )}
       </section>
 
-      {restartOpen && currentSpeaker && (
+      {restartOpen && displaySpeaker && (
         <ConfirmDialog
           title="Restart timer?"
           text="Are you sure you want to restart this speaker's timer?"
           confirm="Restart Timer"
           onCancel={() => setRestartOpen(false)}
           onConfirm={() => {
-            startSpeaker(currentSpeaker);
+            startSpeaker(displaySpeaker);
             setRestartOpen(false);
           }}
         />
